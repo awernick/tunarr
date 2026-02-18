@@ -41,6 +41,7 @@ export const Channel = sqliteTable('channel', {
   transcodeConfigId: text().notNull(),
   watermark: text({ mode: 'json' }).$type<ChannelWatermark>(),
   subtitlesEnabled: integer({ mode: 'boolean' }).default(false),
+  skipCredits: integer({ mode: 'boolean' }).default(false),
 });
 
 export type ChannelTable = KyselifyBetter<typeof Channel>;
