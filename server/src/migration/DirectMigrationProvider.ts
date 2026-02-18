@@ -189,6 +189,10 @@ export class DirectMigrationProvider implements MigrationProvider {
           migration1771459200_AddSkipCredits: makeKyselyMigrationFromSqlFile(
             './sql/0038_add_skip_credits.sql',
           ),
+          migration1771459201_FixMislabeledCreditMarkers:
+            makeKyselyMigrationFromSqlFile(
+              './sql/0039_fix_mislabeled_credit_markers.sql',
+            ),
         },
         wrapWithTransaction,
       ),
