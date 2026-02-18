@@ -73,6 +73,8 @@ jobs:
             type=semver,pattern={{version}}
             # Tag with branch name on manual dispatch
             type=raw,value=${{ github.ref_name }},enable=${{ github.event_name == 'workflow_dispatch' }}
+            # Tag with sanitized branch name on push (e.g. infra/fork-docker-ci -> infra-fork-docker-ci)
+            type=ref,event=branch
             # Update alpha "latest" on any alpha release.
             type=raw,value=alpha,enable=${{ contains(github.ref_name, '-alpha') || contains(github.event.release.tag_name, '-alpha') }}
             # Update dev floating tag on any alpha release.
