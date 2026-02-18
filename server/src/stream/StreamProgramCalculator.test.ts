@@ -361,24 +361,115 @@ describe('StreamProgramCalculator', () => {
       );
     });
 
-    baseTest('mid-credits tune-in returns offline item', async () => {
-      const programDuration = +dayjs.duration({ minutes: 30 });
+    baseTest('mid-credits tune-in advances to next program', async () => {
+      const fillerDB = mock<IFillerListDB>();
+      const channelDB = mock<IChannelDB>();
+      const programDB = mock<IProgramDB>();
+      const fillerPicker = mock<IFillerPicker>();
+      const channelCache = mock<IStreamLineupCache>();
+
+      const startTime = dayjs(new Date(2025, 8, 17, 8));
+      const channelId = faker.string.uuid();
+      const programAId = faker.string.uuid();
+      const programBId = faker.string.uuid();
+      const versionAId = faker.string.uuid();
+      const programADuration = +dayjs.duration({ minutes: 30 });
+      const programBDuration = +dayjs.duration({ minutes: 30 });
       const outroStart = +dayjs.duration({ minutes: 5 });
-      const channelStartTime = dayjs(new Date(2025, 8, 17, 8)).subtract(
-        10,
-        'minutes',
+
+      const lineup: LineupItem[] = [
+        { type: 'content', durationMs: programADuration, id: programAId },
+        { type: 'content', durationMs: programBDuration, id: programBId },
+      ];
+
+      when(programDB.getProgramById(programAId)).thenReturn(
+        Promise.resolve(
+          createFakeProgram({
+            uuid: programAId,
+            duration: programADuration,
+            mediaSourceId: tag<MediaSourceId>('mediasource-123'),
+            versions: [
+              {
+                uuid: versionAId,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                duration: programADuration,
+                sampleAspectRatio: '1:1',
+                displayAspectRatio: '1.78',
+                frameRate: '23.98',
+                scanKind: 'progressive',
+                width: 1920,
+                height: 1080,
+                programId: programAId,
+                chapters: [
+                  {
+                    uuid: faker.string.uuid(),
+                    index: 0,
+                    startTime: outroStart,
+                    endTime: programADuration,
+                    title: null,
+                    chapterType: 'outro' as const,
+                    programVersionId: versionAId,
+                  },
+                ],
+              },
+            ],
+          }),
+        ),
       );
 
-      const { calc, startTime } = setupSkipCreditsTest({
+      when(programDB.getProgramById(programBId)).thenReturn(
+        Promise.resolve(
+          createFakeProgram({
+            uuid: programBId,
+            duration: programBDuration,
+            mediaSourceId: tag<MediaSourceId>('mediasource-456'),
+          }),
+        ),
+      );
+
+      // Channel started 10 min before startTime, so we're 10 min into Program A
+      const channel = createChannelOrm({
+        uuid: channelId,
+        number: 1,
+        startTime: +startTime.subtract(10, 'minutes'),
+        duration: programADuration + programBDuration,
         skipCredits: true,
-        outroStartTimeMs: outroStart,
-        programDurationMs: programDuration,
-        channelStartOffset: channelStartTime,
       });
 
-      // 10 minutes into a 30-minute program, credits at 5 min
-      // timeElapsed (10 min) > outroStart (5 min) => during credits
-      // Should return offline item, capped at 10 min max by createLineupItem
+      when(channelDB.getChannelOrm(1)).thenReturn(Promise.resolve(channel));
+      when(channelDB.loadLineup(channelId)).thenReturn(
+        Promise.resolve({
+          version: 1,
+          items: lineup,
+          startTimeOffsets: calculateStartTimeOffsets(lineup),
+          lastUpdated: now(),
+        }),
+      );
+
+      // Filler mocks needed for offline fallback path
+      when(fillerDB.getFillersFromChannel(channelId)).thenReturn(
+        Promise.resolve([]),
+      );
+      when(channelDB.getChannelFallbackPrograms(channelId)).thenReturn(
+        Promise.resolve([]),
+      );
+      when(
+        fillerPicker.pickFiller(anything(), anything(), anything()),
+      ).thenReturn(EmptyFillerPickResult);
+
+      const calc = new StreamProgramCalculator(
+        LoggerFactory.root,
+        instance(fillerDB),
+        instance(channelDB),
+        instance(channelCache),
+        instance(programDB),
+        instance(fillerPicker),
+      );
+
+      // 10 min into Program A (30 min), credits at 5 min
+      // timeElapsed (10) > outroStart (5) => mid-credits
+      // Should advance past Program A and return Program B
       const out = (
         await calc.getCurrentLineupItem({
           allowSkip: false,
@@ -387,11 +478,7 @@ describe('StreamProgramCalculator', () => {
         })
       ).get();
 
-      expect(out.lineupItem.type).toBe('offline');
-      // Offline screen caps at 10 minutes (see createLineupItem)
-      expect(out.lineupItem.streamDuration).toBe(
-        +dayjs.duration({ minutes: 10 }),
-      );
+      expect(out.lineupItem.type).toBe('program');
     });
 
     baseTest('no outro chapter has no effect on streamDuration', async () => {
