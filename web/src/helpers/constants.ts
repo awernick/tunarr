@@ -38,6 +38,7 @@ export const DefaultChannel: MarkOptional<
   programCount: 0,
   streamMode: 'hls',
   subtitlesEnabled: false,
+  skipCredits: false,
 } as const;
 
 export const TranscodeResolutionOptions = [
